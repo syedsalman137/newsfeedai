@@ -10,11 +10,12 @@ from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, Field
 
 load_dotenv()
+
 ONE_WEEK = timedelta(days=7)
 
-# Initialize News API client
 newsapi_key = os.getenv('NEWSAPI_KEY')
 openai_key = os.getenv('AIMLAPI_KEY')
+
 openai_url = "https://api.aimlapi.com/v1"
 
 newsapi_client = NewsApiClient(api_key=newsapi_key)
@@ -124,7 +125,7 @@ def render_article(item):
 # Function to render category filters using checkboxes in columns
 def render_category_filters(categories):
     st.sidebar.subheader("Categories")
-    num_columns = 3
+    num_columns = 2
     columns = st.sidebar.columns(num_columns)
     selected_categories = []
 
@@ -386,7 +387,7 @@ def llm_parse_user_preference(user_preference):
 
 
 def main():
-    categories = ["business", "entertainment", "general", "health", "science", "sports", "technology"]
+    categories = ["general", "business", "health", "science", "sports", "technology", "entertainment"]
 
     selected_categories = render_category_filters(categories)
     language_code, country_codes, user_preference = render_additional_filters()

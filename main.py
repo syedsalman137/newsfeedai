@@ -2,6 +2,7 @@ import streamlit as st
 from newsapi import NewsApiClient
 from dotenv import load_dotenv
 import os
+from typing import Optional
 from datetime import datetime, timedelta
 
 from openai import OpenAI
@@ -22,6 +23,11 @@ openai_client = OpenAI(api_key=openai_key, base_url=openai_url)
 class NewsPreferences(BaseModel):
     include: list[str] = Field(description="List of topics the user wants to include in their news search.")
     exclude: list[str] = Field(description="List of topics the user wants to exclude from their news search.")
+
+class TopicClassifier(BaseModel):
+    belongs: bool = Field(description="Yes or No | True or False")
+    category: Optional[str] = Field(description="Topic which it belongs to")
+
 news_preference_parser = JsonOutputParser(pydantic_object=NewsPreferences)
 news_preference_system_prompt = (
     "You are a helpful assistant that understands user preferences for news. "
@@ -29,6 +35,15 @@ news_preference_system_prompt = (
     "1. A list of topics the user wants to include in their news search. "
     "2. A list of topics the user wants to exclude from their news search. "
     "Output the response as a JSON object with two keys: 'include' and 'exclude'."
+)
+
+topic_classifier_parser = JsonOutputParser(pydantic_object=TopicClassifier)
+topic_classifier_system_prompt = (
+    "You are a classifier that helps determine if an article belongs to a specific topic. "
+    "The user will provide a headline and summary of an article, as well as a list of topics. "
+    "Your task is to analyze the headline and summary and determine if the article is relevant "
+    "to any of the provided topics. Output the response as a JSON object with two keys: "
+    "{belongs: True|False, category: category|None}"
 )
 
 
@@ -219,6 +234,47 @@ def fetch_articles_all(
     )
     return response.get('articles', [])
 
+@st.cache_data(show_spinner=False)
+def llm_check_topic_in_text(topics, headline, summary):
+    user_prompt = (
+        f"Headline: {headline}\n"
+        f"Summary: {summary}\n"
+        f"Topics: {', '.join(topics)}\n"
+        "Does the article belong to any of these topics?"
+    )
+
+    # Request completion from the LLM using the user's input.
+    completion = openai_client.chat.completions.create(
+        model="meta-llama/Llama-3.2-3B-Instruct-Turbo",
+        messages=[
+            {"role": "system", "content": topic_classifier_system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.3,  # Lower temperature for more consistent responses.
+        max_tokens=50,
+    )
+
+    # Extract the LLM's response.
+    response_content = completion.choices[0].message.content
+    try:
+        parsed_response = topic_classifier_parser.parse(response_content)
+        print("Parsed Response:", parsed_response)
+    except Exception as e:
+        print(f"Error parsing response: {e}")
+    
+    return parsed_response["belongs"]
+
+def llm_based_filter(articles, filter_out_topics):
+    articles = [
+        article for article in articles
+        if not llm_check_topic_in_text(
+            filter_out_topics,
+            headline=article["title"],
+            summary=article["description"]
+        )
+    ]
+    return articles
+
 def is_clean(article):
     if article["title"].lower() == "[removed]":
         return False
@@ -275,7 +331,7 @@ def fetch_news(
         ]
 
         if llm_ban_topics:
-            pass
+            articles = llm_based_filter(articles, llm_ban_topics)
 
         return articles
     except Exception as e:

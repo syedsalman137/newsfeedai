@@ -7,7 +7,7 @@ load_dotenv()
 
 # Initialize News API client
 newsapi_key = os.getenv('NEWSAPI_KEY')
-api = NewsApiClient(api_key='XXXXXXXXXXXXXXXXXXXXXXX')
+api = NewsApiClient(api_key=newsapi_key)
 
 # Country and language mappings
 country_mapping = {
@@ -29,9 +29,13 @@ language_mapping = {
     "Urdu": "ud", "Chinese": "zh"
 }
 
+country_mapping = {k: v for k, v in sorted(country_mapping.items())}
+language_mapping = {k: v for k, v in sorted(language_mapping.items())}
+
 # Function to display news items
 def display_news(news_items):
     st.title("Newsfeed")
+
 
     if not news_items:
         st.info("No relevant news to display.")
@@ -61,7 +65,6 @@ def render_category_filters(categories):
 
 # Function to render additional filters: language, country, and user preferences
 def render_additional_filters():
-    # Language selection
     st.sidebar.subheader("Select Language")
     language_full = st.sidebar.selectbox(
         "Language",
@@ -70,7 +73,6 @@ def render_additional_filters():
     )
     language_code = language_mapping[language_full]
 
-    # Country selection
     st.sidebar.subheader("Select Countries")
     country_full_list = st.sidebar.multiselect(
         "Countries",
@@ -78,7 +80,6 @@ def render_additional_filters():
     )
     country_codes = [country_mapping[country] for country in country_full_list]
 
-    # Text input for user preferences
     st.sidebar.subheader("User Preferences")
     user_preference = st.sidebar.text_input(
         "Enter your news preferences (e.g., 'latest AI developments', 'global economy trends')",
@@ -90,7 +91,6 @@ def render_additional_filters():
 # Function to manage banned news agencies
 def manage_banned_agencies():
     st.sidebar.subheader("Banned News Agencies")
-
     if 'banned_agencies' not in st.session_state:
         st.session_state.banned_agencies = []
 
@@ -111,28 +111,51 @@ def manage_banned_agencies():
                 st.session_state.banned_agencies.remove(agency)
                 st.sidebar.info(f"Removed '{agency}' from banned list.")
 
-# Function to fetch news using NewsAPI
-def fetch_news(language, country, category, user_preference, banned_agencies):
+@st.cache_data(show_spinner=False)
+def fetch_articles(
+    q=None,
+    language=None,
+    country=None,
+    category=None,
+    page_size=20
+):
+    response = api.get_top_headlines(
+                    q=q,
+                    language=language,
+                    country=country,
+                    category=category,
+                    page_size=page_size
+                )
+    return response.get('articles', [])
+
+def fetch_news(language, countries, categories, user_preference, banned_agencies):
     try:
-        response = api.get_top_headlines(
-            q=user_preference,
-            language=language,
-            country=country if country else None,
-            category=category if category else None,
-            page_size=20
-        )
-        articles = response.get('articles', [])
-        # Filter out articles from banned agencies
+        if not countries:
+            countries = [None]
+        if not categories:
+            categories = [None]
+        articles = []
+        for country in countries:
+            for category in categories:
+                temp_articles = fetch_articles(
+                    q=user_preference,
+                    language=language,
+                    country=country,
+                    category=category,
+                    page_size=20
+                )
+                articles.extend(temp_articles)
+        
         articles = [
             article for article in articles
             if article['source']['name'] not in banned_agencies
         ]
+
         return articles
     except Exception as e:
         st.error(f"Error fetching news: {e}")
         return []
 
-# Main function for the app
 def main():
     categories = ["business", "entertainment", "general", "health", "science", "sports", "technology"]
 
@@ -140,19 +163,14 @@ def main():
     language_code, country_codes, user_preference = render_additional_filters()
 
     manage_banned_agencies()
-
-    # Get the first country or use None
-    selected_country = country_codes[0] if country_codes else None
-    selected_category = selected_categories[0] if selected_categories else None
-
-    # Fetch news based on the selected filters
     filtered_news = fetch_news(
         language_code,
-        selected_country,
-        selected_category,
+        country_codes,
+        selected_categories,
         user_preference,
         st.session_state.banned_agencies
     )
+
 
     display_news(filtered_news)
 

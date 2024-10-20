@@ -1,6 +1,7 @@
 # Environtment Files
 /env
 .env
+.streamlit/
 
 # API Debug Files
 temp.py

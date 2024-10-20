@@ -1,6 +1,5 @@
 import streamlit as st
 from newsapi import NewsApiClient
-from dotenv import load_dotenv
 import os
 from typing import Optional
 from datetime import datetime, timedelta
@@ -9,12 +8,10 @@ from openai import OpenAI
 from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, Field
 
-load_dotenv()
-
 ONE_WEEK = timedelta(days=7)
 
-newsapi_key = os.getenv('NEWSAPI_KEY')
-openai_key = os.getenv('AIMLAPI_KEY')
+newsapi_key = st.secrets["NEWSAPI_KEY"]
+openai_key = st.secrets["AIMLAPI_KEY"]
 
 openai_url = "https://api.aimlapi.com/v1"
 

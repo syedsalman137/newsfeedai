@@ -1,3 +1,6 @@
 # Environtment Files
 /env
 .env
+
+# API Debug Files
+temp.py

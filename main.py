@@ -262,13 +262,15 @@ def llm_check_topic_in_text(topics, headline, summary):
 
     # Extract the LLM's response.
     response_content = completion.choices[0].message.content
+
+    parsed_response = {}
     try:
         parsed_response = topic_classifier_parser.parse(response_content)
         print("Parsed Response:", parsed_response)
     except Exception as e:
         print(f"Error parsing response: {e}")
     
-    return parsed_response["belongs"]
+    return parsed_response.get("belongs", False)
 
 def llm_based_filter(articles, filter_out_topics):
     articles = [
@@ -370,14 +372,15 @@ def llm_parse_user_preference(user_preference):
         max_tokens=150,
     )
     response_content = completion.choices[0].message.content
+    parsed_response  = {}
     try:
         parsed_response = news_preference_parser.parse(response_content)
         print("Parsed Response:", parsed_response)
     except Exception as e:
         print(f"Error parsing response: {e}")
     
-    llm_search_topics = parsed_response["include"]
-    llm_ban_topics = parsed_response["exclude"]
+    llm_search_topics = parsed_response.get("include", [])
+    llm_ban_topics = parsed_response.get("exclude", [])
     return llm_search_topics, llm_ban_topics
 
 

@@ -383,9 +383,6 @@ def llm_parse_user_preference(user_preference):
     llm_ban_topics = parsed_response.get("exclude", [])
     return llm_search_topics, llm_ban_topics
 
-
-
-
 def main():
     categories = ["general", "business", "health", "science", "sports", "technology", "entertainment"]
 

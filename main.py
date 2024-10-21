@@ -207,7 +207,7 @@ def manage_banned_agencies():
                 st.session_state.banned_agencies.remove(agency)
                 st.sidebar.info(f"Removed '{agency}' from banned list.")
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def fetch_articles_topk(
     q=None,
     language=None,
@@ -224,7 +224,7 @@ def fetch_articles_topk(
                 )
     return response.get('articles', [])
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def fetch_articles_all(
         q,
         language=None,
@@ -240,7 +240,7 @@ def fetch_articles_all(
     )
     return response.get('articles', [])
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def llm_check_topic_in_text(topics, headline, summary):
     user_prompt = (
         f"Headline: {headline}\n"

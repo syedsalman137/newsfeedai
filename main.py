@@ -1,7 +1,7 @@
 import streamlit as st
 from newsapi import NewsApiClient
 import os
-from typing import Optional
+from typing import Optional, Union
 from datetime import datetime, timedelta
 
 from openai import OpenAI
@@ -24,7 +24,7 @@ class NewsPreferences(BaseModel):
 
 class TopicClassifier(BaseModel):
     belongs: bool = Field(description="Yes or No | True or False")
-    category: Optional[str] = Field(description="Topic which it belongs to")
+    categories: Optional[list[str]] = Field(description="Topic which it belongs to, could be null, None, str, list[str]")
 
 news_preference_parser = JsonOutputParser(pydantic_object=NewsPreferences)
 news_preference_system_prompt = (
@@ -32,16 +32,36 @@ news_preference_system_prompt = (
     "Your job is to parse the user's input into two lists: "
     "1. A list of topics the user wants to include in their news search. "
     "2. A list of topics the user wants to exclude from their news search. "
-    "Output the response as a JSON object with two keys: 'include' and 'exclude'."
+    "Think step-by-step and read the steps aloud: "
+    "\nStep 1: List all the topics user wants to **include** in their news search"
+    "\nStep 2: if no topic is listed  under include list, move on to step 4. "
+    "if one or more topics is listed under include list, for each topic previously listed "
+    "for **include**, read out the sentence in user prompt which highlights the need to include that topic. "
+    "If there is no such sentence you could find, then remove the topic from include list. "
+    "\nStep 3: (skip this step if no topic is listed under include list) List out the remaining topics "
+    " (which need to be include list)."
+    "\nStep 4: List all the topics user wants to **exclude** in their news search"
+    "\nStep 5: if no topic is listed  under exclude list, move on to step 7. "
+    "If one or more topics is listed under exclude list, for each topic previously listed "
+    "for **exclude**, read out the sentence in user prompt which highlights the need to exclude that topic. "
+    "If there is no such sentence you could find, then remove the topic from exclude list. "
+    "\nStep 6: (skip this step if no topic is listed under exclude list) List out the remaining topics "
+    " (which need to be in exclude list)."
+    "\nStep 7: Output the response as a JSON object with two keys: 'include' and 'exclude'."
 )
 
 topic_classifier_parser = JsonOutputParser(pydantic_object=TopicClassifier)
 topic_classifier_system_prompt = (
-    "You are a classifier that helps determine if an article belongs to a specific topic. "
-    "The user will provide a headline and summary of an article, as well as a list of topics. "
+    "You are a classifier that helps determine if an article belongs to a specific category. "
+    "The user will provide a headline and summary of an article, as well as a list of categories. "
     "Your task is to analyze the headline and summary and determine if the article is relevant "
-    "to any of the provided topics. Output the response as a JSON object with two keys: "
-    "{belongs: True|False, category: category|None}"
+    "to any of the provided categories. Think step-by-step and read the steps aloud:  "
+    "Step 1: For each category, read out the sentence which shows that category is relevent. "
+    "If the category is not relevent, just tell the category is not relevent and move on to next category"
+    "Step 2: read out all categories found to be relevent. if not category is found to be relvent, "
+    "just say that no category is relevent"
+    "Step 3: Output the response as JSON object of this type: "
+    '```json\n{\n\t"belongs": true|false,\n\t"categories": list[str]|null\n}\n```'
 )
 
 
@@ -241,15 +261,14 @@ def fetch_articles_all(
     return response.get('articles', [])
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def llm_check_topic_in_text(topics, headline, summary):
+def llm_check_topic_in_text(categories, headline, summary):
     user_prompt = (
         f"Headline: {headline}\n"
         f"Summary: {summary}\n"
-        f"Topics: {', '.join(topics)}\n"
-        "Does the article belong to any of these topics?"
+        f"Categories: {', '.join(categories)}\n"
+        "Does the article belong to any of these categories?"
     )
 
-    # Request completion from the LLM using the user's input.
     completion = openai_client.chat.completions.create(
         model="meta-llama/Llama-3.2-3B-Instruct-Turbo",
         messages=[
@@ -257,12 +276,15 @@ def llm_check_topic_in_text(topics, headline, summary):
             {"role": "user", "content": user_prompt},
         ],
         temperature=0.3,  # Lower temperature for more consistent responses.
-        max_tokens=50,
+        max_tokens=512,
     )
 
     # Extract the LLM's response.
     response_content = completion.choices[0].message.content
+    response_content = response_content.replace('null', 'None')
+    response_content = response_content.replace('None', '[]')
 
+    print("\nuser:", user_prompt, "\nassistant:", response_content)
     parsed_response = {}
     try:
         parsed_response = topic_classifier_parser.parse(response_content)
@@ -272,11 +294,11 @@ def llm_check_topic_in_text(topics, headline, summary):
     
     return parsed_response.get("belongs", False)
 
-def llm_based_filter(articles, filter_out_topics):
+def llm_based_filter(articles, filter_out_categories):
     articles = [
         article for article in articles
         if not llm_check_topic_in_text(
-            filter_out_topics,
+            filter_out_categories,
             headline=article["title"],
             summary=article["description"]
         )
@@ -369,9 +391,10 @@ def llm_parse_user_preference(user_preference):
             {"role": "user", "content": user_preference},
         ],
         temperature=0.3,
-        max_tokens=150,
+        max_tokens=512,
     )
     response_content = completion.choices[0].message.content
+    print("\nuser: ", user_preference, "\nassistant: ", response_content)
     parsed_response  = {}
     try:
         parsed_response = news_preference_parser.parse(response_content)
